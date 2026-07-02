@@ -1,6 +1,6 @@
 # AI SecOps Agent 테스트 리포트
 
-**일시:** 2026-07-02  
+**일시:** 2025.12  
 **데이터셋:** [notesbymuneeb/ai-waf-dataset](https://huggingface.co/datasets/notesbymuneeb/ai-waf-dataset) (Hugging Face)  
 **LLM:** Mock (`LLM_PROVIDER=mock`)  
 **샘플:** benign 5건 + malicious 5건 (총 10건) → `waf_sample_10.json`
