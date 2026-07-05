@@ -66,10 +66,8 @@ def main():
             ["Cell 8", "report_gen", "리포트 생성 노드", "run_report() → reports/"],
             ["Cell 8", "route_after_detect", "조건부 엣지", "is_anomaly → classify | end"],
             ["Cell 9", "모니터링 루프", "500 step 순차 실행 + debounce", "warmup=30, cooldown=25"],
-            ["wafer_agent/", "main.py", "CLI 진입점", "python -m wafer_agent.main"],
-            ["wafer_agent/", "simulator.py", "센서 데이터 생성", "generate_sensor_data()"],
-            ["wafer_agent/", "llm.py", "LLM 통합 (mock/qwen/anthropic)", "load_qwen_model, invoke_structured"],
-            ["wafer_agent/", "agent/graph.py", "LangGraph StateGraph", "build_agent(), run_anomaly_pipeline()"],
+            ["Cell 10", "Qwen 단건 테스트", "분류·대응 LLM 단건 확인", "run_classification, run_action_decision"],
+            ["Cell 11", "시각화", "matplotlib 차트 + GT 오버레이", "events, sensor_df"],
         ],
         col_widths=[14, 28, 36, 48],
     )
@@ -84,7 +82,7 @@ def main():
             ["2026-07-05", "LangGraph", "detect → classify → action → report_gen 파이프라인"],
             ["2026-07-05", "시뮬레이터", "ARMA(1,1) + SPIKE/DRIFT/LOSS 이상 주입"],
             ["2026-07-05", "Colab", "GPU 확인, transformers 4.51+, Qwen 로드 셀 추가"],
-            ["2026-07-05", "패키지", "wafer_agent/ 모듈 구조 추가"],
+            ["2026-07-05", "구조 단순화", "Colab 전용 — wafer_agent/ .py 패키지 제거, 노트북 단일화"],
         ],
         col_widths=[14, 22, 60],
     )
