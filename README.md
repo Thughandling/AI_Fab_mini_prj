@@ -1,211 +1,129 @@
-# AI SecOps Multi-Agent Log Analyzer
+# AI Digital Factory — 웨이퍼 이상탐지 & 자동대응 Agent
 
-WAF/EDR 보안 로그를 **LangGraph 멀티에이전트 파이프라인**으로 분석해, 공격 여부·TP/FP 판정·MITRE 매핑·인시던트 리포트까지 자동 생성하는 프로젝트입니다.
+반도체 Diffusion 공정 **웨이퍼 센서 데이터**를 모니터링하고, 이상 발생 시 **LangGraph Agent**가 원인 분류 → 대응 조치 → 리포트 생성까지 자동 수행하는 프로젝트입니다.
 
 ```
-WAF/EDR Log → Parser → Classifier → [Red Team ∥ Blue Team] → Judge → MITRE → Report
+센서 시뮬레이터 → detect (ARMA) → [이상?] → classify (LLM) → action (LLM) → report
+                                      ↓ 정상
+                                   모니터링 계속
 ```
 
 ## 문제 정의
 
-SOC 환경에서는 WAF·EDR 알람이 대량으로 발생하고, 단일 LLM 분류만으로는 **오탐(FP)** 과 **근거 부족** 문제가 있습니다.  
-본 프로젝트는 Red/Blue adversarial 분석과 Judge 종합 판정을 결합해, **판정 결과와 함께 최종 판단 근거(`final_rationale`)** 를 함께 출력합니다.
+제조 Fab에서는 FDC·센서 데이터 이상이 수율·품질에 직결됩니다.  
+본 프로젝트는 **Agentic AI**로 이상 탐지 후 원인(SPIKE/DRIFT/LOSS)을 분류하고, 대응 수준(Level 1~3)과 Markdown 리포트를 자동 생성합니다.
 
 ## 아키텍처
 
 ```mermaid
 flowchart TD
-    START([app.invoke]) --> parse[parse_node]
-    parse --> classify[classify_node]
-    classify --> red[red_team_node]
-    classify --> blue[blue_team_node]
-    red --> judge[judge_node]
-    blue --> judge
-    judge --> mitre[mitre_node]
-    mitre --> report[report_node]
-    report --> END([result SOCState])
+    START([모니터링 루프]) --> detect[detect_node]
+    detect -->|is_anomaly| classify[classify_node]
+    detect -->|정상| START
+    classify --> action[action_node]
+    action --> report[report_gen]
+    report --> START
 
-    parse -.->|parse_log| P[ParsedLog]
-    classify -.->|ask_json| C[ClassificationResult]
-    red -.->|ask_json| R[RedTeamAnalysis]
-    blue -.->|ask_json| B[BlueTeamAnalysis]
-    judge -.->|ask_json| V[JudgeVerdict]
-    mitre -.->|ask_json| M[MitreMapping]
-    report -.->|ask_json| I[IncidentReport]
+    detect -.->|ARMA 95% CI| D[anomaly_result]
+    classify -.->|Qwen/mock| C[classification_result]
+    action -.->|Qwen/mock| A[action_result]
+    report -.->|Markdown| R[anomaly_report_*.md]
 ```
 
-| 노드 | State 읽기 | 호출 함수 | State 반환 |
-|------|-----------|----------|-----------|
-| `parse_node` | `raw_log`, `log_type` | `parse_log()` | `parsed_log` |
-| `classify_node` | `parsed_log` | `ask_json(..., ClassificationResult)` | `classification` |
-| `red_team_node` | `parsed_log`, `classification` | `ask_json(..., RedTeamAnalysis)` | `red_team` |
-| `blue_team_node` | `parsed_log`, `classification` | `ask_json(..., BlueTeamAnalysis)` | `blue_team` |
-| `judge_node` | `parsed_log`, `classification`, `red_team`, `blue_team` | `ask_json(..., JudgeVerdict)` | `verdict` |
-| `mitre_node` | `parsed_log`, `verdict` | `ask_json(..., MitreMapping)` | `mitre` |
-| `report_node` | `parsed_log`, `verdict`, `mitre` | `ask_json(..., IncidentReport)` | `incident_report` |
-
-상세 플로우차트(PDF/PNG): [`docs/AI_SecOps_Flowchart.pdf`](docs/AI_SecOps_Flowchart.pdf)
-
-## 주요 기능
-
-- **LLM 없는 Parser** — 로그 정규화, IP/URL IOC 추출, WAF/EDR 자동 판별
-- **1차 Classifier** — 공격 여부·유형·confidence 1차 분류
-- **Red / Blue 병렬 분석** — 공격 가설 vs 정상/오탐 가설을 동시에 수집
-- **Judge + 최종 판단 근거** — Red/Blue를 종합해 `verdict`, `tp_fp`, `final_rationale` 출력
-- **MITRE ATT&CK 매핑** — technique ID, severity, 권고사항
-- **인시던트 리포트** — executive summary + markdown 리포트
-- **구조화 출력** — Pydantic 스키마 + `with_structured_output` + JSON 파싱 폴백(json5, json-repair)
+| 노드 | 역할 | LLM |
+|------|------|-----|
+| `detect_node` | ARMA(1,1) 예측 + 95% CI 이상 판정 | X |
+| `classify_node` | SPIKE / DRIFT / LOSS 원인 분류 | O |
+| `action_node` | Level 1~3 대응 조치 결정 | O |
+| `report_gen` | Markdown 리포트 저장 | X |
 
 ## 기술 스택
 
 | 구분 | 기술 |
 |------|------|
-| Orchestration | LangGraph (`StateGraph`) |
-| LLM | Gemini / OpenAI / Mock |
-| Schema | Pydantic v2 |
-| Notebook | Jupyter (Colab 호환) |
-| Dataset | [notesbymuneeb/ai-waf-dataset](https://huggingface.co/datasets/notesbymuneeb/ai-waf-dataset) |
+| Orchestration | LangGraph 0.2.x (`StateGraph`) |
+| LLM | **Qwen3-0.6B** (HuggingFace) / mock / Anthropic Claude |
+| 이상탐지 | statsmodels ARMA(1,1), 95% CI (z=1.96) |
+| 데이터 | numpy, pandas (시뮬레이션) |
+| Notebook | Jupyter / **Google Colab** (T4 GPU 권장) |
 
 ## 프로젝트 구조
 
 ```
-AI-secops/
-├── AI_SecOps.ipynb              # Colab용 메인 노트북
+AI-DigitalFactory/
+├── AI_DigitalFactory.ipynb          # Colab 메인 노트북
+├── AI_DigitalFactory_개발정의.xlsx   # 셀/함수 개발 정의서
 ├── README.md
-├── LICENSE
 ├── requirements.txt
-├── .env.example                 # API 키 템플릿 (커밋 X: .env)
-├── docs/
-│   ├── AI_SecOps_Flowchart.pdf  # Node/State/Function 플로우차트
-│   ├── AI_SecOps_Flowchart.png
-│   └── generate_flowchart.py
-├── scripts/
-│   └── download_dataset.py      # HF 데이터셋 다운로드
-└── test_data/
-    ├── secops_core.py           # 파이프라인 코어
-    ├── run_validation.py        # 배치 검증 (100 → 10)
-    ├── run_batch_test.py        # 10건 샘플 정확도 테스트
-    ├── waf_sample_10.json       # 샘플 10건 (repo 포함)
-    └── TEST_REPORT.md
+├── .env.example
+├── wafer_agent/
+│   ├── main.py                      # CLI 진입점
+│   ├── simulator.py                 # ARMA + 이상 주입
+│   ├── llm.py                       # mock / qwen / anthropic
+│   ├── config.py
+│   ├── agent/graph.py               # LangGraph 정의
+│   └── tools/
+│       ├── detector.py              # Tool1: 이상탐지
+│       ├── classifier.py            # Tool2: 원인 분류
+│       ├── action.py                # Tool3: 대응 결정
+│       └── reporter.py              # Tool4: 리포트
+└── reports/                         # 생성 리포트 (gitignore)
 ```
-
-> `ai_waf_dataset_full.json` (~5MB)은 `.gitignore` 처리. 필요 시 `python scripts/download_dataset.py` 로 받으세요.
 
 ## 빠른 시작
 
-### 1. 의존성
+### Colab (권장)
+
+1. `AI_DigitalFactory.ipynb` 열기
+2. **Runtime → Change runtime type → T4 GPU**
+3. 셀 순서대로 실행 (pip → GPU 확인 → 환경설정 → **Qwen 로드** → …)
+4. 빠른 테스트: `LLM_PROVIDER = "mock"`
+5. Qwen 사용: `LLM_PROVIDER = "qwen"`
+
+### 로컬
 
 ```bash
 pip install -r requirements.txt
+
+# Mock (API/모델 없이)
+LLM_PROVIDER=mock python3 -m wafer_agent.main --no-plot
+
+# Qwen3-0.6B (GPU 권장)
+LLM_PROVIDER=qwen python3 -m wafer_agent.main
 ```
 
-Colab 노트북은 상단 pip 셀을 실행해도 됩니다.
+### 환경 변수 (`.env.example` 참고)
 
-### 1-1. (선택) 전체 WAF 데이터셋
+| 변수 | 설명 |
+|------|------|
+| `LLM_PROVIDER` | `mock` \| `qwen` \| `anthropic` |
+| `HF_MODEL_ID` | 기본 `Qwen/Qwen3-0.6B` |
+| `ANTHROPIC_API_KEY` | anthropic 사용 시 |
 
-```bash
-pip install datasets
-python scripts/download_dataset.py
-# → test_data/ai_waf_dataset_full.json
-```
+## 이상 유형 & 대응
 
-### 2. Mock 모드 (API 키 없이 파이프라인 검증)
-
-```bash
-cd test_data
-LLM_PROVIDER=mock python3 run_validation.py
-```
-
-Mock 모드는 **파이프라인 연결·에러 없음**을 검증합니다. 레이블 정확도 평가는 Gemini/OpenAI 사용을 권장합니다.
-
-### 3. Python에서 단건 실행
-
-```python
-from secops_core import analyze
-
-result = analyze(
-    {
-        "source": "aws-waf",
-        "action": "BLOCK",
-        "http_method": "GET",
-        "uri": "/api/users?id=1' UNION SELECT username,password FROM admin--",
-        "client_ip": "203.0.113.45",
-        "message": "SQL injection blocked",
-    },
-    log_type="waf",
-)
-
-v = result["verdict"]
-print(v.verdict, v.tp_fp, v.confidence)
-print(v.final_rationale)
-```
-
-### 4. Gemini / OpenAI
-
-```bash
-export LLM_PROVIDER=gemini   # 또는 openai
-export GOOGLE_API_KEY=your_key   # gemini
-# export OPENAI_API_KEY=your_key  # openai
-```
-
-Colab에서는 `AI_SecOps.ipynb` 환경 설정 셀에서 `LLM_PROVIDER`를 선택하고, API 키는 **Colab Secrets** (`GOOGLE_API_KEY` / `OPENAI_API_KEY`) 또는 로컬 `getpass`로 주입하세요. `.env.example` 참고.
-
-### 5. 노트북 (Colab)
-
-1. `AI_SecOps.ipynb` 업로드 또는 GitHub에서 열기
-2. pip 설치 셀 실행
-3. `LLM_PROVIDER` 설정
-4. Model → State → Node → Graph 셀 순서대로 실행
-5. 마지막 실행 셀:
-
-```python
-result = app.invoke({"raw_log": WAF_LOG, "log_type": "waf"})
-```
+| 분류 | 패턴 | 의심 원인 | 대응 예시 |
+|------|------|-----------|-----------|
+| **SPIKE** | 급격한 수치 변화 | 장비 이슈 | Level 2: 로트 격리 |
+| **DRIFT** | 점진적 변화 | 공정 파라미터 이상 | Level 2: 엔지니어 통보 |
+| **LOSS** | 결측/NaN | 센서 이슈 | Level 3: 장비 중단 |
 
 ## 출력 예시
 
 ```
-【최종 판정】 ATTACK (TP)  |  confidence=78%
-
-【최종 판단 근거】 (Judge LLM 분석)
-Red Team은 로그에서 공격 패턴(의심 페이로드·비정상 URI)을 ...
-Blue Team은 오탐·정상 트래픽 가능성을 제시했으나 ...
-따라서 본 이벤트는 실제 공격(TP)으로 판단합니다.
+⚠️  step 334 | LOSS → Level 3
+  [classify] LOSS (92%)
+  [action] Level 3: 장비 중단 + 웨이퍼 재배치 지시
+  [report] → anomaly_report_2026-01-01_05-34-00.md
 ```
-
-## 검증 결과
-
-| 항목 | 결과 |
-|------|------|
-| 파이프라인 배치 실행 (mock, 100건) | 100/100 OK |
-| 파이프라인 배치 실행 (mock, 10건) | 10/10 OK |
-| LangGraph 7단계 완료 | 정상 |
-| Judge `final_rationale` 출력 | 정상 |
-
-자세한 테스트 내역: [`test_data/TEST_REPORT.md`](test_data/TEST_REPORT.md)
-
-> MockLLM은 키워드 휴리스틱 기반이라 **레이블 정확도 평가용이 아닙니다.** 실제 TP/FP 성능은 Gemini/OpenAI로 측정하세요.
 
 ## 설계 포인트
 
-1. **Parser는 LLM 제외** — IOC 추출·정규화는 규칙 기반으로 고정해 비용·재현성 확보
-2. **Red/Blue 병렬** — LangGraph `Parallelization` 패턴으로 상반된 가설을 동시에 수집
-3. **Judge as Evaluator** — Evaluator-Optimizer 패턴으로 최종 TP/FP 및 근거 생성
-4. **Pydantic + structured output** — Agent 간 계약을 스키마로 고정, Gemini JSON 파싱 오류는 json5/json-repair로 보완
-
-## 한계 & 향후 개선
-
-- [ ] Hugging Face Space / Streamlit 데모 UI
-- [ ] EDR 로그 평가 데이터셋 확장
-- [ ] Judge 판정 vs ground truth 벤치마크 (Gemini 기준)
-- [ ] FastAPI 엔드포인트 (실시간 로그 ingest)
-- [ ] MITRE 매핑 RAG (공식 technique description 연동)
+1. **이상탐지는 LLM 제외** — ARMA 통계 모델로 재현성·비용 확보
+2. **LangGraph 조건부 엣지** — 정상이면 모니터링, 이상이면 classify→action→report
+3. **Debounce + Cooldown** — 연속 이상 구간 중복 리포트 방지
+4. **Colab 최적화** — Qwen 0.6B 로컬 추론, GPU/CPU 자동 선택
 
 ## 라이선스
 
 MIT — see [LICENSE](LICENSE)
-
-## 참고
-
-- LangGraph 패턴: Prompt Chaining + Parallelization + Evaluator-Optimizer
-- WAF 데이터셋: [notesbymuneeb/ai-waf-dataset](https://huggingface.co/datasets/notesbymuneeb/ai-waf-dataset)

@@ -14,13 +14,8 @@ venv/
 .env
 .env.local
 
-# Large dataset (use scripts/download_dataset.py)
-test_data/ai_waf_dataset_full.json
-
-# Internal planning docs
-*.xlsx
-
-# Temp / cache
+# Generated at runtime
+reports/
 .tmp.*
 docs/.mpl_cache/
 
