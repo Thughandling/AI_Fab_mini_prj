@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "AI_DigitalFactory_개발정의.xlsx"
+OUT = ROOT / "docs" / "AI_DigitalFactory_개발정의.xlsx"
 
 HEADER_FILL = PatternFill("solid", fgColor="1F4E79")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
